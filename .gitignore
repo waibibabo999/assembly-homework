@@ -1,0 +1,9 @@
+*.obj
+*.OBJ
+*.exe
+*.EXE
+*.map
+*.MAP
+*.log
+*.LOG
+*.BAK
