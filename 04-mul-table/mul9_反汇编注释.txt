@@ -1,0 +1,215 @@
+作业4  第3小题：九九乘法表 C 版本的编译结果与反汇编注释
+================================================================
+
+环境：DOSBox 0.74 + Turbo C++ 3.00（16 位 DOS 编译器）
+C 源文件：mul9.c        可执行文件：mul9c.exe（与汇编版 mul9.exe 区分）
+
+
+一、C 源程序（mul9.c）
+----------------------------------------------------------------
+
+    #include <stdio.h>
+
+    int main(void)
+    {
+        int i, j;
+
+        printf("The 9mul9 table:\n");
+
+        for (i = 9; i >= 1; i--) {
+            for (j = 1; j <= i; j++) {
+                printf("%d*%d=%d", i, j, i * j);
+                if (j != i) {
+                    putchar(' ');
+                    putchar(' ');
+                    putchar(' ');
+                    if (i * j < 10)
+                        putchar(' ');
+                }
+            }
+            putchar('\n');
+        }
+
+        return 0;
+    }
+
+
+二、编译、运行、反汇编的命令
+----------------------------------------------------------------
+    D:\> path d:\tc\bin
+    D:\> tcc -Id:\tc\include -Ld:\tc\lib -emul9c.exe mul9.c
+    D:\> mul9c
+    D:\> debug mul9c.exe
+    -u 0 800
+    -q
+
+   程序装入后代码段为 076A（每次运行的段号可能不同，不影响阅读）。
+
+
+三、反汇编代码（main 函数部分）逐行注释
+----------------------------------------------------------------
+
+                        ; ===== 函数序言：保存用到的寄存器 =====
+076A:0291 55        PUSH BP                  ; 保存调用者的 BP
+076A:0292 8BEC      MOV  BP,SP               ; 建立栈帧
+076A:0294 56        PUSH SI                  ; 保存 SI —— 后面拿它当外层变量 i
+076A:0295 57        PUSH DI                  ; 保存 DI —— 后面拿它当内层变量 j
+
+                        ; ===== printf("The 9mul9 table:\n"); =====
+076A:0296 B8AA00    MOV  AX,00AA             ; 格式串的偏移（数据段 00AA）
+076A:0299 50        PUSH AX                  ; 压入唯一的一个参数
+076A:029A E81F0D    CALL 0FBC                ; 调用 printf
+076A:029D 59        POP  CX                  ; 调用者清理参数（C 调用约定）
+
+                        ; ===== 外层 for：i = 9; i >= 1; i-- =====
+076A:029E BE0900    MOV  SI,0009             ; i = 9
+076A:02A1 E9DA00    JMP  037E                ; 先跳到条件判断（for 先判条件）
+
+                        ; ===== 内层 for：j = 1; j <= i; j++ =====
+076A:02A4 BF0100    MOV  DI,0001             ; j = 1
+076A:02A7 E9AA00    JMP  0354                ; 先跳到内层条件
+
+                        ; ===== printf("%d*%d=%d", i, j, i*j); =====
+076A:02AA 8BC6      MOV  AX,SI               ; AX = i
+076A:02AC F7EF      IMUL DI                  ; ★ 乘法指令：DX:AX = i * j（这里结果小，AX 就是积）
+076A:02AE 50        PUSH AX                  ; 第 4 个参数：i*j
+076A:02AF 57        PUSH DI                  ; 第 3 个参数：j
+076A:02B0 56        PUSH SI                  ; 第 2 个参数：i
+076A:02B1 B8BC00    MOV  AX,00BC             ; 第 1 个参数：格式串 "%d*%d=%d"
+076A:02B4 50        PUSH AX
+076A:02B5 E8040D    CALL 0FBC                ; 调用 printf（参数从右往左压栈）
+076A:02B8 83C408    ADD  SP,+08              ; 4 个参数 × 2 字节，由调用者清理
+
+                        ; ===== if (j != i) —— 最后一列不补空格 =====
+076A:02BB 3BFE      CMP  DI,SI               ; 比较 j 和 i
+076A:02BD 7503      JNZ  02C2                ; 不相等 → 继续补空格
+076A:02BF E99100    JMP  0353                ; 相等（最后一列）→ 跳过补空格
+
+                        ; ===== putchar(' ') ×3（Turbo C 把 putchar 展开成宏）=====
+076A:02C2 FF06DE00  INC  WORD PTR [00DE]      ; stdout 缓冲计数 +1
+076A:02C6 7D10      JGE  02D8                ; 计数 ≥ 0 → 缓冲区满，走函数调用
+076A:02C8 8B1EE800  MOV  BX,[00E8]           ; BX = stdout->curp
+076A:02CC FF06E800  INC  WORD PTR [00E8]      ; curp++
+076A:02D0 B020      MOV  AL,20               ; 空格 ' ' = 20H
+076A:02D2 8807      MOV  [BX],AL             ; 直接写进缓冲区（快路径）
+076A:02D4 B400      MOV  AH,00
+076A:02D6 EB0C      JMP  02E4
+076A:02D8 B8DE00    MOV  AX,00DE             ; 缓冲区满：调用 __fputc
+076A:02DB 50        PUSH AX
+076A:02DC B020      MOV  AL,20
+076A:02DE 50        PUSH AX
+076A:02DF E8F10C    CALL 0FD3                ; __fputc
+076A:02E2 59        POP  CX
+076A:02E3 59        POP  CX
+
+076A:02E4 FF06DE00  INC  WORD PTR [00DE]      ; 第 2 个 putchar(' ')，结构与上面相同
+076A:02E8 7D10      JGE  02FA
+076A:02EA 8B1EE800  MOV  BX,[00E8]
+076A:02EE FF06E800  INC  WORD PTR [00E8]
+076A:02F2 B020      MOV  AL,20
+076A:02F4 8807      MOV  [BX],AL
+076A:02F6 B400      MOV  AH,00
+076A:02F8 EB0C      JMP  0306
+076A:02FA B8DE00    MOV  AX,00DE
+076A:02FD 50        PUSH AX
+076A:02FE B020      MOV  AL,20
+076A:0300 50        PUSH AX
+076A:0301 E8CF0C    CALL 0FD3
+076A:0304 59        POP  CX
+076A:0305 59        POP  CX
+
+076A:0306 FF06DE00  INC  WORD PTR [00DE]      ; 第 3 个 putchar(' ')，结构相同
+076A:030A 7D10      JGE  031C
+076A:030C 8B1EE800  MOV  BX,[00E8]
+076A:0310 FF06E800  INC  WORD PTR [00E8]
+076A:0314 B020      MOV  AL,20
+076A:0316 8807      MOV  [BX],AL
+076A:0318 B400      MOV  AH,00
+076A:031A EB0C      JMP  0328
+076A:031C B8DE00    MOV  AX,00DE
+076A:031F 50        PUSH AX
+076A:0320 B020      MOV  AL,20
+076A:0322 50        PUSH AX
+076A:0323 E8AD0C    CALL 0FD3
+076A:0326 59        POP  CX
+076A:0327 59        POP  CX
+
+                        ; ===== if (i * j < 10) putchar(' '); =====
+076A:0328 8BC6      MOV  AX,SI               ; AX = i
+076A:032A F7EF      IMUL DI                  ; AX = i * j（第二次算，用来判断位数）
+076A:032C 3D0A00    CMP  AX,000A             ; 和 10 比较
+076A:032F 7D22      JGE  0353                ; ≥10（两位数）→ 不再补第 4 个空格
+076A:0331 FF06DE00  INC  WORD PTR [00DE]      ; 一位数：补第 4 个空格
+076A:0335 7D10      JGE  0347
+076A:0337 8B1EE800  MOV  BX,[00E8]
+076A:033B FF06E800  INC  WORD PTR [00E8]
+076A:033F B020      MOV  AL,20
+076A:0341 8807      MOV  [BX],AL
+076A:0343 B400      MOV  AH,00
+076A:0345 EB0C      JMP  0353
+076A:0347 B8DE00    MOV  AX,00DE
+076A:034A 50        PUSH AX
+076A:034B B020      MOV  AL,20
+076A:034D 50        PUSH AX
+076A:034E E8820C    CALL 0FD3
+076A:0351 59        POP  CX
+076A:0352 59        POP  CX
+
+                        ; ===== 内层循环收尾：j++ 和条件 j <= i =====
+076A:0353 47        INC  DI                  ; j++
+076A:0354 3BFE      CMP  DI,SI               ; 比较 j 和 i
+076A:0356 7F03      JG   035B                ; j > i → 退出内层
+076A:0358 E94FFF    JMP  02AA                ; 否则回到内层循环体
+
+                        ; ===== putchar('\n') =====
+076A:035B FF06DE00  INC  WORD PTR [00DE]      ; 换行 0AH，结构同上面的 putchar 宏
+076A:035F 7D10      JGE  0371
+076A:0361 8B1EE800  MOV  BX,[00E8]
+076A:0365 FF06E800  INC  WORD PTR [00E8]
+076A:0369 B00A      MOV  AL,0A
+076A:036B 8807      MOV  [BX],AL
+076A:036D B400      MOV  AH,00
+076A:036F EB0C      JMP  037D
+076A:0371 B8DE00    MOV  AX,00DE
+076A:0374 50        PUSH AX
+076A:0375 B00A      MOV  AL,0A
+076A:0377 50        PUSH AX
+076A:0378 E8580C    CALL 0FD3
+076A:037B 59        POP  CX
+076A:037C 59        POP  CX
+
+                        ; ===== 外层循环收尾：i-- 和条件 i >= 1 =====
+076A:037D 4E        DEC  SI                  ; i--
+076A:037E 83FE01    CMP  SI,+01              ; 和 1 比较
+076A:0381 7C03      JL   0386                ; i < 1 → 结束外层
+076A:0383 E91EFF    JMP  02A4                ; 否则回到外层循环体
+
+                        ; ===== return 0 和函数尾声 =====
+076A:0386 33C0      XOR  AX,AX               ; 返回值 0
+076A:0388 EB00      JMP  038A
+076A:038A 5F        POP  DI                  ; 恢复 DI
+076A:038B 5E        POP  SI                  ; 恢复 SI
+076A:038C 5D        POP  BP                  ; 恢复 BP
+076A:038D C3        RET                      ; 返回
+
+
+四、要点小结
+----------------------------------------------------------------
+1) 双重循环在汇编里就是"两套计数器 + 两套条件跳转"：
+     外层 i：SI，初始化 9，每轮 DEC，条件 CMP SI,1 / JL 结束；
+     内层 j：DI，初始化 1，每轮 INC，条件 CMP DI,SI / JG 结束。
+   编译器先把 JMP 放到条件判断处，做到"先判断、后执行"，和 C 的 for 语义一致。
+
+2) i * j 用的是 IMUL（有符号乘法）：
+     它把 AX 和操作数相乘，结果放在 DX:AX。
+     这里乘积最大 81，所以只用 AX 就够；如果是大数就要连 DX 一起看。
+
+3) printf 的参数从右往左压栈：
+     先压 i*j，再压 j、i，最后压格式串；调用完 ADD SP,8 由调用者清理 4 个参数。
+   这和 C 的 cdecl 调用约定完全一致。
+
+4) putchar(' ') 每一句都展开成一大段：
+     快路径直接写 stdout 缓冲区，缓冲区满才 CALL __fputc。
+   所以 C 里 4 行 putchar，汇编里是几十条指令——这也是"看反汇编"的价值。
+
+5) 返回值 0 用 XOR AX,AX，序言/尾声只保存实际用到的 SI、DI、BP。
