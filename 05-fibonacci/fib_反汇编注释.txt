@@ -1,0 +1,173 @@
+作业5  第7小题：C 语言递归斐波那契的编译结果与注释
+================================================================
+
+环境：DOSBox 0.74 + Turbo C++ 3.00（16 位 DOS 编译器）
+C 源文件：fib.c        可执行文件：fibc.exe
+
+
+一、C 源程序（fib.c）
+----------------------------------------------------------------
+
+    #include <stdio.h>
+
+    unsigned long fib(unsigned int n)
+    {
+        if (n < 2)
+            return n;
+        return fib(n - 1) + fib(n - 2);
+    }
+
+    int main(void)
+    {
+        unsigned int n;
+        printf("n = ");
+        scanf("%u", &n);
+        if (n < 1 || n > 47) {
+            printf("out of range\n");
+            return 1;
+        }
+        printf("F(%u) = %lu\n", n, fib(n));
+        return 0;
+    }
+
+
+二、生成汇编清单 / 反汇编的命令
+----------------------------------------------------------------
+    D:\> path d:\tc\bin
+    D:\> tcc -Id:\tc\include -Ld:\tc\lib -efibc.exe fib.c
+    D:\> fibc
+
+    D:\> tcc -Id:\tc\include -Ld:\tc\lib -S fib.c    ← 生成 FIB.ASM（带标号的汇编清单）
+    D:\> debug fibc.exe                              ← 也可以直接反汇编 exe
+    -u 0 1000
+    -q
+
+
+三、fib 函数的汇编（逐行注释）
+----------------------------------------------------------------
+
+_fib	proc	near
+	push	bp                  ; 保存调用者的 BP
+	mov	bp,sp               ; 建立栈帧：参数在 [BP+4]
+	push	si                  ; 保存 SI（下面用它存 n）
+	mov	si,word ptr [bp+4]  ; SI = n（C 参数从右往左压栈，第一个参数在 [BP+4]）
+
+   ;	    if (n < 2)
+	cmp	si,2
+	jae	short @1@86         ; n >= 2 → 跳到递归部分
+
+   ;	        return n;
+	mov	ax,si               ; 返回值低 16 位 = n
+	xor	dx,dx               ; 返回值高 16 位 = 0（unsigned long 是 32 位）
+	jmp	short @1@114        ; 跳到函数尾声
+
+@1@86:
+   ;	    return fib(n - 1) + fib(n - 2);
+	mov	ax,si
+	dec	ax
+	push	ax                  ; 压参数 n-1
+	call	near ptr _fib       ; ★ 递归调用 fib(n-1)，返回 DX:AX
+	pop	cx                  ; 调用者清理参数
+	push	ax                  ; 保存 F(n-1) 低 16 位
+	push	dx                  ; 保存 F(n-1) 高 16 位
+
+	mov	ax,si
+	sub	ax,2
+	push	ax                  ; 压参数 n-2
+	call	near ptr _fib       ; ★ 递归调用 fib(n-2)
+	pop	cx                  ; 清理参数
+
+	mov	bx,dx               ; BX = F(n-2) 的高 16 位
+	pop	dx                  ; DX = F(n-1) 的高 16 位
+	pop	cx                  ; CX = F(n-1) 的低 16 位
+	add	cx,ax               ; 低 16 位相加：CX = F(n-1)低 + F(n-2)低
+	adc	dx,bx               ; 高 16 位相加并加上进位
+	mov	ax,cx               ; 结果低 16 位放回 AX
+
+@1@114:
+   ;	    }
+	pop	si                  ; 恢复 SI
+	pop	bp                  ; 恢复 BP
+	ret	                        ; 返回（ret 弹出返回地址）
+_fib	endp
+
+
+四、main 的关键部分
+----------------------------------------------------------------
+
+_main	proc	near
+	push	bp
+	mov	bp,sp
+	sub	sp,2                ; 在栈上给局部变量 n 留 2 字节
+
+	mov	ax,offset DGROUP:s@ ; "n = "
+	push	ax
+	call	near ptr _printf
+	pop	cx
+
+	lea	ax,word ptr [bp-2]  ; &n
+	push	ax
+	mov	ax,offset DGROUP:s@+5   ; "%u"
+	push	ax
+	call	near ptr _scanf
+	pop	cx
+	pop	cx                  ; 调用者清理两个参数
+
+	cmp	word ptr [bp-2],1   ; if (n < 1 ...)
+	jb	short @2@86
+	cmp	word ptr [bp-2],47  ; ... || n > 47)
+	jbe	short @2@142
+@2@86:
+	mov	ax,offset DGROUP:s@+8   ; "out of range\n"
+	push	ax
+	call	near ptr _printf
+	pop	cx
+	mov	ax,1                ; return 1
+	jmp	short @2@170
+
+@2@142:
+	push	word ptr [bp-2]     ; 参数 n
+	call	near ptr _fib       ; ★ 调用递归函数
+	pop	cx
+	push	dx                  ; printf 第 4 个参数：F(n) 高 16 位
+	push	ax                  ; 第 3 个参数：F(n) 低 16 位
+	push	word ptr [bp-2]     ; 第 2 个参数：n
+	mov	ax,offset DGROUP:s@+22  ; 第 1 个参数："F(%u) = %lu\n"
+	push	ax
+	call	near ptr _printf
+	add	sp,8                ; 4 个参数 × 2 字节，调用者清理
+
+	xor	ax,ax               ; return 0
+	jmp	short @2@114
+@2@170:
+	mov	sp,bp
+	pop	bp
+	ret
+_main	endp
+
+
+五、要点小结
+----------------------------------------------------------------
+1) 递归的本质：函数内部 CALL 自己。
+   两次 call near ptr _fib 就是 fib(n-1) 和 fib(n-2)，
+   ret 返回上一层，栈里保存着每层的参数和返回地址。
+
+2) 参数在 [BP+4]：
+   C 调用约定从右往左压参数，call 压返回地址，
+   进入函数后 push bp 再 mov bp,sp，所以第一个参数正好在 [BP+4]。
+
+3) 返回值是 32 位：
+   unsigned long 在 16 位 C 里占 4 字节，低 16 位在 AX，高 16 位在 DX。
+   相加时 add 处理低位、adc 处理高位，把进位一起加上。
+
+4) 为什么用栈保存 F(n-1)：
+   算 F(n-2) 时又要调用一次 fib，递归会破坏寄存器，
+   所以先把 F(n-1) 压栈，第二次调用返回后再弹出来相加。
+
+5) 栈帧内容（每层）：
+   返回地址、保存的 BP、保存的 SI、参数 n、F(n-1) 的两个字。
+   递归深度 = n，所以 n=100 时大约 100 层，栈开 2KB 足够。
+
+6) 和手写汇编版的对比：
+   手写版把 n 和 F(n-1) 都放在 BP 相对的位置上，并用 adc 处理进位；
+   编译器把 n 放进 SI、把 F(n-1) 临时压栈，思路完全一致。
